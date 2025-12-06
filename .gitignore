@@ -1,0 +1,12 @@
+*.bin
+*.pyc
+__pycache__/
+.env
+venv/
+.env/
+.idea/
+.vscode/
+.DS_Store
+logs/
+*.crt
+*.key
