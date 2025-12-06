@@ -23,7 +23,6 @@ class Server:
         os.makedirs(FILE_SAVE_PATH, exist_ok=True) # Ensure the directory for saving files exists
         
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow port reuse
         server_socket.bind((self.host, self.port))
         server_socket.listen(5) # Allow up to 5 queued connections
 
@@ -80,8 +79,9 @@ class Server:
             duration = end_time - start_time
 
             if total_data_received > 0:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                self.save_received_file(data, f"received_from_{addr[0]}_{addr[1]}_{timestamp}.bin")
+                print(f"Received {total_data_received} bytes from {addr} in {duration:.6f} seconds.")
+                #timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                #self.save_received_file(data, f"received_from_{addr[0]}_{addr[1]}_{timestamp}.bin")
             
             # Send acknowledgment
             try:
@@ -112,3 +112,4 @@ if __name__ == "__main__":
 
     server = Server(HOST, args.port, args.tls)
     server.start()
+    

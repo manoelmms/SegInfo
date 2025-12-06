@@ -1,20 +1,13 @@
 # File to run performance tests by sending files of various sizes to the server and generating performance graphs
 import os
 from client import Client
-from server import Server
-from graph_data import load_performance_data, analyze_performance, create_graph
+from graph_data import load_performance_data, create_graph
+from graph_data import analyze_performance as ap
 from generate_server_key import generate_self_signed_cert
-import threading
 import time
-
 
 PORT = 65432
 TOTAL_TESTS = 5
-
-def start_server(use_tls, port):
-    # Start the server in a separate thread
-    server_thread = threading.Thread(target=lambda: Server('localhost', port, use_tls).start(), daemon=True)
-    server_thread.start()
 
 def run_client(file_path, use_tls, port):
     client = Client('localhost', port, use_tls)
@@ -23,19 +16,13 @@ def run_client(file_path, use_tls, port):
 
 def generate_test_files():
     from generate_file import generate_random_file
-    sizes = [2 * 1024 * 1024, 4 * 1024 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024, 64 * 1024 * 1024]  # Sizes in bytes
+    sizes = [2 * 1024 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024, 64 * 1024 * 1024]  # Sizes in bytes
     for size in sizes:
         filename = f"{size // (1024 * 1024)}mb_random_file.bin"
         generate_random_file(filename, size)
 
 def run_performance_tests(use_tls, port):
-    test_files = [
-        '2mb_random_file.bin',
-        '4mb_random_file.bin',
-        '8mb_random_file.bin',
-        '16mb_random_file.bin',
-        '64mb_random_file.bin'
-    ]
+    test_files = [f"{size}mb_random_file.bin" for size in [2, 8, 16, 32, 64]]
     # Run clients to send files
     for file in test_files:
         print(f"Sending file: {file}")
@@ -47,11 +34,12 @@ def run_performance_tests(use_tls, port):
 
 def analyze_performance():
     performance_data = load_performance_data('client_performance.log')
+    ap(performance_data)
     create_graph(performance_data)
     print("Performance tests completed.")
 
 if __name__ == "__main__":
-    if not all(os.path.exists(f"{size}mb_random_file.bin") for size in [2, 4, 8, 16, 64]):
+    if not all(os.path.exists(f"{size}mb_random_file.bin") for size in [2, 8, 16, 32, 64]):
         print("Generating test files...")
         generate_test_files()
 
@@ -62,12 +50,6 @@ if __name__ == "__main__":
     print("Generating self-signed certificate and key for TLS...")
     generate_self_signed_cert()
 
-    print(f"\n{'='*60}")
-    print(f"Starting servers...")
-    start_server(use_tls=False, port=PORT)
-    start_server(use_tls=True, port=PORT + 1)
-    print(f"{'='*60}")
-    
     print(f"\n{'='*60}")
     print(f"Running {TOTAL_TESTS} tests...")
     print(f"{'='*60}")

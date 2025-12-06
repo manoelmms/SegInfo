@@ -64,16 +64,18 @@ class Client:
             with open(file_path, 'rb') as file:
                 data = file.read()
                 data_size = len(data)
-                start_time = time.time()
                 
-                # Send file size first, then data
+                # Send file size header
                 size_header = data_size.to_bytes(8, byteorder='big')
                 self.sock.sendall(size_header)
-                self.sock.sendall(data)
                 
-                # Wait for acknowledgment
-                ack = self.sock.recv(1024)
+                # Measure only the data transfer time (not ACK reception)
+                start_time = time.time()
+                self.sock.sendall(data)
                 end_time = time.time()
+                
+                # Wait for acknowledgment (but don't include in timing)
+                ack = self.sock.recv(1024)
                 
                 if ack:
                     ack_decoded = ack.decode('utf-8')

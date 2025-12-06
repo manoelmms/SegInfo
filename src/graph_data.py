@@ -30,8 +30,26 @@ def analyze_performance(data):
         average_speed_mbps=pd.NamedAgg(column='speed_mbps', aggfunc='mean')
     ).reset_index()
 
-    print("\nPerformance Summary:")
+    print("\n" + "="*60)
+    print("Performance Summary:")
+    print("="*60)
     print(summary)
+    
+    # Calculate TLS overhead
+    if 'TLS' in summary['connection_type'].values and 'TCP' in summary['connection_type'].values:
+        tls_speed = summary[summary['connection_type'] == 'TLS']['average_speed_mbps'].values[0]
+        tcp_speed = summary[summary['connection_type'] == 'TCP']['average_speed_mbps'].values[0]
+        
+        overhead_pct = ((tcp_speed - tls_speed) / tcp_speed) * 100
+        
+        print("\n" + "="*60)
+        print("TLS Performance Impact:")
+        print("="*60)
+        print(f"TCP Average Speed:  {tcp_speed:.2f} MB/s")
+        print(f"TLS Average Speed:  {tls_speed:.2f} MB/s")
+        print(f"Speed Difference:   {tcp_speed - tls_speed:.2f} MB/s")
+        print(f"TLS Overhead:       {overhead_pct:.2f}%")
+        print("="*60)
     print()
 
 def create_graph(data):
