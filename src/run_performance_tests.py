@@ -7,7 +7,7 @@ from generate_server_key import generate_self_signed_cert
 import time
 
 PORT = 65432
-TOTAL_TESTS = 15
+TOTAL_TESTS = 31
 
 def run_client(file_path, use_tls, port):
     client = Client('localhost', port, use_tls)
