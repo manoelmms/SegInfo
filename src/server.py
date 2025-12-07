@@ -23,6 +23,7 @@ class Server:
         os.makedirs(FILE_SAVE_PATH, exist_ok=True) # Ensure the directory for saving files exists
         
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind((self.host, self.port))
         server_socket.listen(5) # Allow up to 5 queued connections
 
@@ -51,11 +52,14 @@ class Server:
 
         data_chunks = []
         try:
-            # First, receive the file size (8 bytes)
-            size_data = conn.recv(8)
-            if len(size_data) < 8:
-                print(f"Failed to receive size header from {addr}")
-                return
+            # First, receive the file size (8 bytes) - ensure we get exactly 8 bytes
+            size_data = b''
+            while len(size_data) < 8:
+                chunk = conn.recv(8 - len(size_data))
+                if not chunk:
+                    print(f"Connection closed while receiving header from {addr}")
+                    return
+                size_data += chunk
             
             expected_size = int.from_bytes(size_data, byteorder='big')
             print(f"Expecting {expected_size} bytes from {addr}")
@@ -112,4 +116,3 @@ if __name__ == "__main__":
 
     server = Server(HOST, args.port, args.tls)
     server.start()
-    

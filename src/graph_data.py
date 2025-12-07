@@ -8,12 +8,10 @@ def load_performance_data(file_path):
         data = pd.read_csv(file_path, names=['timestamp', 'connection_type', 'data_size', 'duration'])
         data['data_size'] = data['data_size'].astype(int)
         data['duration'] = data['duration'].astype(float)
-        # Convert to MB
-        data['data_size_mb'] = data['data_size'] / (1024 * 1024)
         # Convert duration to milliseconds
         data['duration_ms'] = data['duration'] * 1000
         # Calculate speed in MB/s
-        data['speed_mbps'] = data['data_size_mb'] / data['duration']
+        data['speed_mbps'] = (data['data_size'] / (1024 * 1024)) / data['duration']
         return data
     except Exception as e:
         print(f"Error loading performance data from {file_path}: {e}")
@@ -25,9 +23,11 @@ def analyze_performance(data):
         return
 
     summary = data.groupby('connection_type').agg(
-        total_data_size_mb=pd.NamedAgg(column='data_size_mb', aggfunc='sum'),
-        total_duration_s=pd.NamedAgg(column='duration', aggfunc='sum'),
-        average_speed_mbps=pd.NamedAgg(column='speed_mbps', aggfunc='mean')
+        count=pd.NamedAgg(column='duration', aggfunc='count'),
+        mean_duration_ms=pd.NamedAgg(column='duration_ms', aggfunc='mean'),
+        std_duration_ms=pd.NamedAgg(column='duration_ms', aggfunc='std'),
+        mean_speed_mbps=pd.NamedAgg(column='speed_mbps', aggfunc='mean'),
+        std_speed_mbps=pd.NamedAgg(column='speed_mbps', aggfunc='std')
     ).reset_index()
 
     print("\n" + "="*60)
@@ -37,17 +37,17 @@ def analyze_performance(data):
     
     # Calculate TLS overhead
     if 'TLS' in summary['connection_type'].values and 'TCP' in summary['connection_type'].values:
-        tls_speed = summary[summary['connection_type'] == 'TLS']['average_speed_mbps'].values[0]
-        tcp_speed = summary[summary['connection_type'] == 'TCP']['average_speed_mbps'].values[0]
+        tls_time = summary[summary['connection_type'] == 'TLS']['mean_duration_ms'].values[0]
+        tcp_time = summary[summary['connection_type'] == 'TCP']['mean_duration_ms'].values[0]
         
-        overhead_pct = ((tcp_speed - tls_speed) / tcp_speed) * 100
+        overhead_pct = ((tls_time - tcp_time) / tcp_time) * 100
         
         print("\n" + "="*60)
         print("TLS Performance Impact:")
         print("="*60)
-        print(f"TCP Average Speed:  {tcp_speed:.2f} MB/s")
-        print(f"TLS Average Speed:  {tls_speed:.2f} MB/s")
-        print(f"Speed Difference:   {tcp_speed - tls_speed:.2f} MB/s")
+        print(f"TCP Average Time:   {tcp_time:.4f} ms")
+        print(f"TLS Average Time:   {tls_time:.4f} ms")
+        print(f"Time Difference:    {tls_time - tcp_time:.4f} ms")
         print(f"TLS Overhead:       {overhead_pct:.2f}%")
         print("="*60)
     print()
@@ -58,13 +58,75 @@ def create_graph(data):
         return
 
     # Separate data by connection type
-    tls_data = data[data['connection_type'] == 'TLS'].sort_values('data_size_mb')
-    tcp_data = data[data['connection_type'] == 'TCP'].sort_values('data_size_mb')
+    tls_data = data[data['connection_type'] == 'TLS']
+    tcp_data = data[data['connection_type'] == 'TCP']
 
-    # Create individual graphs
-    create_time_graph(tls_data, tcp_data)
-    create_speed_graph(tls_data, tcp_data)
-    create_comparison_graph(tls_data, tcp_data)
+    # Create overhead graph
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    
+    # Graph 1: Transfer time comparison (box plot)
+    if not tls_data.empty and not tcp_data.empty:
+        plot_data = [tcp_data['duration_ms'].values, tls_data['duration_ms'].values]
+        labels = ['TCP', 'TLS']
+        colors = ['#A23B72', '#2E86AB']
+        
+        bp = axes[0].boxplot(plot_data, tick_labels=labels, patch_artist=True)
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.6)
+        
+        axes[0].set_ylabel('Transfer Time (milliseconds)', fontsize=11)
+        axes[0].set_title('Transfer Time Distribution', fontsize=13, fontweight='bold')
+    
+    # Graph 2: Average speed comparison (bar chart)
+    if not tls_data.empty and not tcp_data.empty:
+        speeds = [tcp_data['speed_mbps'].mean(), tls_data['speed_mbps'].mean()]
+        labels = ['TCP', 'TLS']
+        colors = ['#A23B72', '#2E86AB']
+        
+        axes[1].bar(labels, speeds, color=colors, alpha=0.8, width=0.6)
+        axes[1].set_ylabel('Average Speed (MB/s)', fontsize=11)
+        axes[1].set_title('Average Transfer Speed', fontsize=13, fontweight='bold')
+        
+        # Add value labels on bars
+        for i, v in enumerate(speeds):
+            axes[1].text(i, v + max(speeds)*0.02, f'{v:.2f}', 
+                        ha='center', va='bottom', fontweight='bold')
+    
+    # Graph 3: TLS Overhead percentage
+    if not tls_data.empty and not tcp_data.empty:
+        tcp_mean = tcp_data['duration_ms'].mean()
+        tls_mean = tls_data['duration_ms'].mean()
+        
+        # Calculate overall overhead
+        overall_overhead = ((tls_mean - tcp_mean) / tcp_mean) * 100
+        
+        # Calculate overhead for each measurement against the mean
+        tcp_times = tcp_data['duration_ms'].values
+        tls_times = tls_data['duration_ms'].values
+        
+        # Individual overheads relative to TCP mean
+        tls_overhead_individual = ((tls_times - tcp_mean) / tcp_mean) * 100
+        
+        # Plot overhead distribution
+        axes[2].hist(tls_overhead_individual, bins=15, color='#F18F01', alpha=0.7, edgecolor='black')
+        axes[2].axvline(overall_overhead, color='red', linestyle='--', linewidth=2, 
+                       label=f'Mean: {overall_overhead:.2f}%')
+        axes[2].set_xlabel('TLS Overhead (%)', fontsize=11)
+        axes[2].set_ylabel('Frequency', fontsize=11)
+        axes[2].set_title('TLS Overhead Distribution', fontsize=13, fontweight='bold')
+        axes[2].legend()
+    
+    plt.tight_layout()
+    plt.savefig('graph_performance_comparison.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    print("Saved: graph_performance_comparison.png")
+
+if __name__ == "__main__":
+    performance_data = load_performance_data('client_performance.log')
+    analyze_performance(performance_data)
+    create_graph(performance_data)
+    print("Performance analysis and graph generation completed.")
     
     print("\nAll graphs saved successfully!")
 

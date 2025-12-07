@@ -7,30 +7,18 @@ from generate_server_key import generate_self_signed_cert
 import time
 
 PORT = 65432
-TOTAL_TESTS = 5
+TOTAL_TESTS = 15
 
 def run_client(file_path, use_tls, port):
     client = Client('localhost', port, use_tls)
     client.connect()
     client.send_file(file_path)
 
-def generate_test_files():
-    from generate_file import generate_random_file
-    sizes = [2 * 1024 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024, 64 * 1024 * 1024]  # Sizes in bytes
-    for size in sizes:
-        filename = f"{size // (1024 * 1024)}mb_random_file.bin"
-        generate_random_file(filename, size)
-
 def run_performance_tests(use_tls, port):
-    test_files = [f"{size}mb_random_file.bin" for size in [2, 8, 16, 32, 64]]
-    # Run clients to send files
-    for file in test_files:
-        print(f"Sending file: {file}")
-        run_client(file, use_tls, port)
-        time.sleep(1) 
-    
-    # Allow time for last server response
-    time.sleep(2)
+    test_file = 'test_file.txt'
+    print(f"Sending file: {test_file}")
+    run_client(test_file, use_tls, port)
+    time.sleep(1)
 
 def analyze_performance():
     performance_data = load_performance_data('client_performance.log')
@@ -39,10 +27,11 @@ def analyze_performance():
     print("Performance tests completed.")
 
 if __name__ == "__main__":
-    if not all(os.path.exists(f"{size}mb_random_file.bin") for size in [2, 8, 16, 32, 64]):
-        print("Generating test files...")
-        generate_test_files()
-
+    # Ensure test_file.txt exists
+    if not os.path.exists('test_file.txt'):
+        from generate_file import generate_pattern_file
+        generate_pattern_file('test_file.txt', 'Hello World!', 15)
+    
     # clean previous log
     if os.path.exists('client_performance.log'):
         os.remove('client_performance.log')
@@ -58,7 +47,7 @@ if __name__ == "__main__":
         print(f"\n--- TCP Test {i+1}/{TOTAL_TESTS} ---")
         run_performance_tests(use_tls=False, port=PORT)
         print(f"Waiting before next test...")
-        time.sleep(3)
+        time.sleep(1)
     
     print(f"\n{'='*60}")
     print(f"TCP tests completed. Waiting before TLS tests...")
@@ -69,7 +58,7 @@ if __name__ == "__main__":
         print(f"\n--- TLS Test {i+1}/{TOTAL_TESTS} ---")
         run_performance_tests(use_tls=True, port=PORT + 1)
         print(f"Waiting before next test...")
-        time.sleep(3)
+        time.sleep(1)
     
     print(f"\n{'='*60}")
     print("Analyzing performance data...")

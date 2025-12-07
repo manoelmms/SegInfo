@@ -27,7 +27,7 @@ def generate_pattern_file(filename, pattern, repetitions):
         print(f"Failed to generate pattern file '{filename}': {e}")
 
 if __name__ == "__main__":
-    generate_pattern_file('test_file.txt', 'Hello World!', 2000)
+    generate_pattern_file('test_file.txt', 'Hello World!', 15)
     generate_random_file('2mb_random_file.bin', 2 * 1024 * 1024)  # 2 MB random file
     generate_random_file('8mb_random_file.bin', 8 * 1024 * 1024)  # 8 MB random file
     generate_random_file('16mb_random_file.bin', 16 * 1024 * 1024)  # 16 MB random file
