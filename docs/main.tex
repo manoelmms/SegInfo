@@ -107,7 +107,7 @@ O processo inicia quando o cliente envia o \textit{ClientHello}, contendo:
 
 \begin{itemize}
     \item versões suportadas do TLS;
-    \item lista de \textit{Cipher Suites};
+    \item lista de \textit{Cipher Suites}, que representam combinações de algoritmos criptográficos (como troca de chaves, cifra simétrica e função de integridade) que definem como a comunicação será protegida durante a sessão TLS;
     \item \textit{Client Random}, um valor aleatório enviado pelo cliente usado, junto com outros valores, para derivar as chaves criptográficas da sessão;
     \item extensão \textbf{KeyShare} com parâmetros ECDHE(Elliptic Curve Diffie–Hellman Ephemeral), ou seja, com um método de troca de chaves que usa curvas elípticas e chaves temporárias para permitir que duas partes gerem um segredo compartilhado com alta segurança e suporte a forward secrecy;
     \item extensão \textbf{SNI} (Server Name Indication).
@@ -143,7 +143,7 @@ Com os valores ECDHE trocados, cliente e servidor já conseguem derivar o \texti
 
 A partir deste ponto, no TLS~1.3 \textbf{todas as mensagens seguintes passam a ser cifradas}.
 
-\begin{figure} [ht]
+\begin{figure} [H]
     \centering
     \includegraphics[width=1\linewidth]{ServerHello.png}
     \caption{ServerHello}
@@ -157,11 +157,12 @@ No TLS~1.2 essa proteção não ocorria tão cedo: o \textit{ServerHello} era se
 Após o \textit{ServerHello}, com a cifração ativada, o servidor envia:
 
 \begin{itemize}
-    \item \textbf{EncryptedExtensions};
-    \item \textbf{Certificate};
-    \item \textbf{CertificateVerify};
-    \item \textbf{Finished}.
+    \item \textbf{EncryptedExtensions}: conjunto de extensões adicionais protegidas por criptografia, indicando parâmetros negociados que não puderam ser enviados em claro no \textit{ServerHello};
+    \item \textbf{Certificate}: certificado digital do servidor, contendo sua chave pública e utilizado para comprovar sua identidade ao cliente;
+    \item \textbf{CertificateVerify}: prova criptográfica de que o servidor realmente possui a chave privada correspondente ao certificado enviado, assinando dados do handshake com algoritmo de criptografia assimétrica padrão da versão do TLS utilizada (alguma versão do RSA);
+    \item \textbf{Finished}: mensagem final de autenticação, contendo um MAC calculado com as chaves derivadas, confirmando a integridade de todo o handshake até esse ponto.
 \end{itemize}
+
 
 Toda essa etapa ocorre em canal cifrado no TLS~1.3. No TLS~1.2, porém, essas mensagens eram transmitidas em texto claro, separando esta parte de autenticação com mensagens adicionais como \textit{ServerHelloDone} e um \textit{CertificateVerify} opcional do cliente. 
 
@@ -189,6 +190,16 @@ A criptografia no TLS~1.3 baseia-se em:
     \item segredos derivados pelo HKDF: \textit{Early}, \textit{Handshake} e \textit{Master Secret}.
 \end{itemize}
 
+O HKDF (HMAC-based Key Derivation Function) é utilizado de forma encadeada para derivar diversos segredos a partir do segredo ECDHE e dos valores aleatórios trocados entre cliente e servidor. No TLS~1.3, cada fase do handshake utiliza um segredo específico, formando uma hierarquia de chaves:
+
+\begin{itemize}
+    \item \textbf{Early Secret}: utilizado em conexões com 0-RTT. Derivado antes mesmo da conclusão do handshake completo, pode proteger dados enviados precocemente pelo cliente. Em conexões normais (sem 0-RTT), ele serve apenas como ponto inicial da cadeia de derivação.
+    
+    \item \textbf{Handshake Secret}: derivado a partir do segredo ECDHE e do \textit{Early Secret}. Fornece as chaves temporárias que protegem as mensagens de handshake (como \textit{EncryptedExtensions}, \textit{Certificate}, etc.). Essas chaves garantem sigilo e integridade durante a autenticação e a negociação.
+    
+    \item \textbf{Master Secret}: derivado do \textit{Handshake Secret} após a autenticação do servidor. A partir dele são geradas as chaves finais da sessão (chaves de aplicação), utilizadas para cifrar todo o tráfego após o \textit{Finished}. Essas chaves são diferentes para cliente e servidor e são rotacionadas conforme necessário durante a conexão.
+\end{itemize}
+
 Além disso, o segredo ECDHE é efêmero e único para cada handshake, fazendo com que cada sessão gere chaves completamente diferentes, evitando ataques de replay e o reuso de sessões.
 
 \subsubsection{Proteção dos Dados}
@@ -207,7 +218,7 @@ Portanto, podemos concluir que o TLS acrescenta uma camada de segurança ao cana
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.7\linewidth]{cript1.png}
+    \includegraphics[width=1\linewidth]{cript1.png}
     \caption{Texto Cifrado no TLS}
     \label{fig:cript}
 \end{figure}
