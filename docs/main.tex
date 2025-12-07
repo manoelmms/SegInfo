@@ -96,28 +96,52 @@ Seu funcionamento se divide em duas etapas principais: o handshake e a criptogra
 O handshake TLS é a sequência de mensagens que estabelece parâmetros de segurança entre cliente e servidor antes da transmissão de dados de aplicação. Seu objetivo é: (1) autenticar o servidor (e opcionalmente o cliente), (2) negociar algoritmos (cipher suite), (3) estabelecer segredos compartilhados (chaves de sessão) e (4) verificar que ambas as partes possuem os mesmos segredos (mensagens \texttt{Finished}). Após o handshake, o Record Protocol protege qualquer \texttt{application\_data} por cifragem autenticada (AEAD) ou por combinação MAC+cifra dependendo da versão.
 
 \subsection{Funcionamento do Handshake TLS}
-O processo pode ser dividido em quatro fases principais.
+O processo pode ser dividido em três fases principais.
 
 \subsubsection{Fase 1: \textit{ClientHello} e \textit{ServerHello}}
 
 Nesta fase, cliente e servidor negociam os parâmetros iniciais da conexão segura.
 
 \paragraph*{ClientHello}
-O cliente inicia a comunicação enviando:
+O processo inicia quando o cliente envia o \textit{ClientHello}, contendo:
+
 \begin{itemize}
-    \item \textbf{Versão suportada do TLS}: indica a versão máxima do protocolo que pode utilizar.
-    \item \textbf{Cipher Suites}: lista ordenada dos conjuntos criptográficos suportados.
-    \item \textbf{Client Random}: valor aleatório que servirá de insumo para a derivação das chaves.
-    \item \textbf{Session ID}: usado para tentar retomar uma sessão anterior ou indicar que será necessário um handshake completo.
+    \item versões suportadas do TLS;
+    \item lista de \textit{Cipher Suites};
+    \item \textit{Client Random}, um valor aleatório enviado pelo cliente usado, junto com outros valores, para derivar as chaves criptográficas da sessão;
+    \item extensão \textbf{KeyShare} com parâmetros ECDHE(Elliptic Curve Diffie–Hellman Ephemeral), ou seja, com um método de troca de chaves que usa curvas elípticas e chaves temporárias para permitir que duas partes gerem um segredo compartilhado com alta segurança e suporte a forward secrecy;
+    \item extensão \textbf{SNI} (Server Name Indication).
 \end{itemize}
 
+No TLS~1.2 o \textit{ClientHello} não incluía o \textbf{KeyShare}. Em vez disso, a troca de chaves era adiada para mensagens posteriores, como o \textit{ServerKeyExchange} e o \textit{ClientKeyExchange}.
+Assim, o TLS~1.3 adianta a negociação ECDHE e reduz a quantidade total de mensagens necessárias.
+
+\begin{figure} [ht]
+    \centering
+    \includegraphics[width=1\linewidth]{ClientHello.png}
+    \caption{ClientHello}
+    \label{fig:chello}
+\end{figure}
+
+\begin{figure} [ht]
+    \centering
+    \includegraphics[width=1\linewidth]{ClientKeyShare.png}
+    \caption{ClientHello - KeyShare}
+    \label{fig:chello}
+\end{figure}
+
 \paragraph*{ServerHello}
-O servidor responde escolhendo os parâmetros da sessão:
+O servidor responde enviando:
+
 \begin{itemize}
-    \item Seleciona a \textbf{cipher suite} que será usada.
-    \item Envia o \textbf{Server Random}.
-    \item Retorna o \textbf{Session ID}, confirmando a negociação.
+    \item a \textit{cipher suite} selecionada;
+    \item o \textit{Server Random};
+    \item sua própria estrutura \textbf{KeyShare} com o valor ECDHE correspondente.
 \end{itemize}
+
+Com os valores ECDHE trocados, cliente e servidor já conseguem derivar o \textit{Handshake Secret} via HKDF (HMAC-based Key Derivation Function) - uima função de derivação de chaves que usa HMAC para transformar um segredo inicial em múltiplas chaves criptográficas seguras e independentes.
+
+A partir deste ponto, no TLS~1.3 \textbf{todas as mensagens seguintes passam a ser cifradas}.
 
 \begin{figure} [ht]
     \centering
@@ -126,81 +150,64 @@ O servidor responde escolhendo os parâmetros da sessão:
     \label{fig:shello}
 \end{figure}
 
+No TLS~1.2 essa proteção não ocorria tão cedo: o \textit{ServerHello} era seguido de várias mensagens ainda em texto claro, como \textit{Certificate}, \textit{ServerKeyExchange}, \textit{CertificateRequest} (quando usado) e \textit{ServerHelloDone}.
+
 \subsubsection{Fase 2: Autenticação do Servidor}
 
-Após o \textit{ServerHello}, o servidor envia as mensagens responsáveis por autenticar sua identidade e definir os parâmetros de troca de chaves.
+Após o \textit{ServerHello}, com a cifração ativada, o servidor envia:
 
 \begin{itemize}
-    \item \textbf{Certificate}: contém a chave pública e identifica o servidor.
-    \item \textbf{Server Key Exchange}
-    \item \textbf{CertificateRequest} (opcional): solicita certificado do cliente.
-    \item \textbf{ServerHelloDone}: indica que o servidor concluiu sua parte inicial do handshake.
+    \item \textbf{EncryptedExtensions};
+    \item \textbf{Certificate};
+    \item \textbf{CertificateVerify};
+    \item \textbf{Finished}.
 \end{itemize}
 
-\subsubsection{Fase 3: Resposta do Cliente}
+Toda essa etapa ocorre em canal cifrado no TLS~1.3. No TLS~1.2, porém, essas mensagens eram transmitidas em texto claro, separando esta parte de autenticação com mensagens adicionais como \textit{ServerHelloDone} e um \textit{CertificateVerify} opcional do cliente. 
 
-O cliente agora valida as informações do servidor e envia seus próprios parâmetros para finalizar a troca de chaves.
+\subsubsection{Fase 3: Resposta do Cliente e Finalização da Negociação}
+
+Após validar o certificado e verificar a mensagem \textit{Finished} do servidor, o cliente envia sua própria:
 
 \begin{itemize}
-    \item \textbf{Validação do certificado}: o cliente verifica autenticidade, validade e cadeia de confiança.
-    \item \textbf{ClientKeyExchange}:
-    \item \textbf{Certificate} e \textbf{CertificateVerify} (se solicitados): autenticam o cliente.
+    \item \textbf{Finished}.
 \end{itemize}
 
-\subsubsection{Fase 4: Finalização da Negociação}
+Com isso, ambos derivam as \textit{application traffic keys} e a comunicação segura começa.
 
-Uma vez derivadas as chaves simétricas, ambas as partes ativam a criptografia.
-
-\paragraph*{Mensagens do cliente}
-\begin{itemize}
-    \item \textbf{ChangeCipherSpec}: informa que o cliente começará a usar as chaves negociadas.
-    \item \textbf{Finished}: primeira mensagem já cifrada, confirmando a integridade do handshake.
-\end{itemize}
-
-\paragraph*{Mensagens do servidor}
-\begin{itemize}
-    \item \textbf{ChangeCipherSpec}: o servidor também passa a usar as chaves derivadas.
-    \item \textbf{Finished}: confirma que a negociação foi concluída com sucesso.
-\end{itemize}
+No TLS~1.2 existia uma mensagem a mais neste ponto: o \textit{ChangeCipherSpec}, usada para indicar que as partes passariam a cifrar o tráfego. O TLS~1.3 elimina essa etapa completamente, pois a proteção já é ativada automaticamente após o \textit{ServerHello}.
 
 Após a troca dessas mensagens, o handshake está finalizado e o canal seguro é estabelecido.
 
 \subsection{Criptografia no TLS}
 
-A criptografia no TLS ocorre na \textit{Record Layer}, que utiliza as chaves derivadas durante o handshake para proteger a comunicação.
+A criptografia no TLS~1.3 baseia-se em:
 
-\subsubsection{Derivação das Chaves}
-
-O TLS utiliza três valores:
 \begin{itemize}
-    \item \textbf{Client Random}
-    \item \textbf{Server Random}
-    \item \textbf{Pre-Master Secret} (obtido via ECDHE ou RSA)
+    \item segredo ECDHE compartilhado (Diffie-Hellman Efêmero);
+    \item valores aleatórios (\textit{Client Random} e \textit{Server Random});
+    \item segredos derivados pelo HKDF: \textit{Early}, \textit{Handshake} e \textit{Master Secret}.
 \end{itemize}
 
-Esses valores são combinados em uma função de derivação de chaves (\textit{HKDF} nas versões modernas) para produzir:
-\begin{itemize}
-    \item Chave de criptografia do cliente.
-    \item Chave de criptografia do servidor.
-    \item Chaves de autenticação e integridade.
-\end{itemize}
+Além disso, o segredo ECDHE é efêmero e único para cada handshake, fazendo com que cada sessão gere chaves completamente diferentes, evitando ataques de replay e o reuso de sessões.
 
 \subsubsection{Proteção dos Dados}
 
-Cada mensagem enviada é tratada na Record Layer:
+Cada bloco transmitido é protegido por algoritmos AEAD, como AES-GCM ou ChaCha20-Poly1305, garantindo:
+
 \begin{itemize}
-    \item É autenticada (HMAC ou AEAD, dependendo da versão do TLS).
-    \item É criptografada com a chave da direção correspondente.
-    \item É encapsulada em um \textit{TLS Record} e transmitida.
+    \item confidencialidade;
+    \item integridade;
+    \item autenticação.
 \end{itemize}
 
-Essa separação garante confidencialidade, integridade e proteção contra ataques de replay.
+O TLS~1.2 permitia combinações separadas de cifra e MAC (ex.: AES-CBC + HMAC), o que poderia  resultar em falhas de implementação, como ataques de padding. Diante disso, o TLS~1.3 exige exclusivamente AEAD.
 
-Assim, o TLS acrescenta uma camada de segurança ao canal confiável já estabelecido pelo TCP, tornando a comunicação adequada para aplicações sensíveis, como transações bancárias, autenticação e transmissão de informações privadas.
+Portanto, podemos concluir que o TLS acrescenta uma camada de segurança ao canal confiável já estabelecido pelo TCP, tornando a comunicação adequada para aplicações sensíveis, como transações bancárias, autenticação e transmissão de informações privadas.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1\linewidth]{cript1.png}
+    \includegraphics[width=0.7\linewidth]{cript1.png}
     \caption{Texto Cifrado no TLS}
     \label{fig:cript}
 \end{figure}
@@ -388,9 +395,9 @@ class Client:
 
 O uso do TLS, apesar de essencial para assegurar confidencialidade e integridade, acarreta um custo adicional de desempenho, conhecido como \textit{overhead}. Esse custo resulta diretamente das operações criptográficas realizadas durante a negociação da conexão e na proteção dos dados transmitidos.
 
-Assim, o experimento foi conduzido para comparar o desempenho da transferência de dados usando TCP puro e TLS. Para isso, foi utilizado um arquivo pequeno (\texttt{test\_file.txt}, com 195 bytes) e realizado um conjunto de \textbf{10 execuções} para cada protocolo. Em cada rodada, o script \texttt{run\_performance\_tests.py} estabeleceu a conexão, transferiu o arquivo e registrou automaticamente o tempo total e o \textit{throughput}.
+Assim, o experimento foi conduzido para comparar o desempenho da transferência de dados usando TCP puro e TLS. Para isso, foi utilizado um arquivo pequeno (\texttt{test\_file.txt}, com 195 bytes) e realizado um conjunto de \textbf{31 execuções} para cada protocolo. Em cada rodada, o script \texttt{run\_performance\_tests.py} estabeleceu a conexão, transferiu o arquivo e registrou automaticamente o tempo total e o \textit{throughput}.
 
-Os resultados finais apresentados são as médias das 10 repetições por protocolo, o que reduz variações pontuais e permite uma análise mais confiável do impacto do TLS sobre o desempenho.
+Os resultados finais apresentados são as médias das 31 repetições por protocolo usando uma análise indicada pelo Teorema Central do Limite, o que reduz variações pontuais e permite uma análise mais confiável do impacto do TLS sobre o desempenho.
 
 \begin{table}[H]
     \centering
@@ -398,9 +405,9 @@ Os resultados finais apresentados são as médias das 10 repetições por protoc
  
     \textbf{Métrica} & \textbf{TCP Puro} & \textbf{TLS} & \textbf{Impacto} \\
     \hline
-    Tempo Médio & 0.0077s & 0.0123s & \textbf{+58.62\%} \\
+    Tempo Médio & 0.0066s & 0.0099s & \textbf{+50.00\%} \\
     \hline
-    Throughput Médio & 43.41 MB/s & 17.58 MB/s & \textbf{-59.50\%} \\
+    Throughput Médio & 43.16 MB/s & 20.05 MB/s & \textbf{-46.45\%} \\
     \end{tabular}
     \label{tab:tabela 1}
 \end{table}
@@ -414,21 +421,21 @@ Os resultados finais apresentados são as médias das 10 repetições por protoc
 
 \subsection{Interpretação do Overhead}
 
-Os resultados mostram que o uso de TLS aumentou o tempo médio de transferência de 0.0077s para 0.0123s, o que representa um acréscimo de 58.62\%. Esse aumento corresponde a um \textbf{Fator de Desaceleração de aproximadamente 1.60x}, indicando que a transmissão protegida levou cerca de 60\% mais tempo que o TCP puro.
+Os resultados mostram que o uso de TLS aumentou o tempo médio de transferência de 0.0066s para 0.0099s. Esse aumento corresponde a um \textbf{Fator de Desaceleração de aproximadamente 0.50x}, indicando que a transmissão protegida levou cerca de 50\% mais tempo que o TCP puro.
 
 Os motivos principais para essa desaceleração são:
 
 \begin{itemize}
-\item \textbf{Handshake Inicial}: Antes de enviar qualquer dado, o TLS precisa negociar algoritmos, validar certificado e realizar a troca de chaves (ECDHE), introduzindo latência adicional.
+\item \textbf{Handshake Inicial}: Antes de enviar qualquer dado, o TLS precisa negociar algoritmos, validar certificado e realizar a troca de chaves (Neste caso, via ECDHE), introduzindo latência adicional.
 \item \textbf{Criptografia e Descriptografia}: Cada bloco de dados precisa ser cifrado pelo cliente e decifrado pelo servidor. Esse processamento contínuo, embora rápido em arquivos pequenos, ainda adiciona custo de CPU perceptível.
 \item \textbf{Sobrecarga de Protocolo}: Cada registro TLS inclui metadados e um \textit{authentication tag}, aumentando levemente o tamanho transmitido e contribuindo para a queda de vazão.
 \end{itemize}
 
-Esses fatores explicam a redução de 59.50\% no throughput, que caiu de 43.41 MB/s (TCP) para 17.58 MB/s (TLS).
+Esses fatores explicam a redução de 46.45\% no throughput, que caiu de 43.16 MB/s (TCP Puro) para 20.05 MB/s (TLS).
 
 \section{Conclusão}
 
-Os experimentos demonstram que o uso de TLS introduz um custo de desempenho mensurável, aumentando o tempo de transferência em cerca de 1.60x e reduzindo o throughput em aproximadamente 60\%. Apesar desse impacto, o TLS permanece indispensável, pois garante confidencialidade, integridade e autenticação — requisitos fundamentais em qualquer comunicação moderna.
+Os experimentos demonstram que o uso de TLS introduz um custo de desempenho mensurável, aumentando o tempo de transferência em cerca de 1.50x e reduzindo o throughput em aproximadamente 50\%. Apesar desse impacto, o TLS permanece indispensável, pois garante confidencialidade, integridade e autenticação — requisitos fundamentais em qualquer comunicação moderna.
 
 Assim, o relatório confirma que existe um trade-off claro entre segurança e desempenho: o TLS adiciona latência e processamento, mas esses custos são plenamente justificáveis frente aos benefícios de proteção dos dados.
 
